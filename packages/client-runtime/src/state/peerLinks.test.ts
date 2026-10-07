@@ -2,7 +2,7 @@ import { EnvironmentId, type PeerLinkSummary } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 
-import { peerLinkHealth } from "./peerLinks.ts";
+import { peerLinkHealth, threadHandoffNotice } from "./peerLinks.ts";
 
 const now = DateTime.makeUnsafe("2026-10-06T12:00:00.000Z");
 const link = (overrides: Partial<PeerLinkSummary>): PeerLinkSummary => ({
@@ -37,5 +37,31 @@ describe("peerLinkHealth", () => {
     expect(
       peerLinkHealth(link({ status: "unreachable", lastError: "Box stopped answering." }), now),
     ).toEqual({ kind: "unreachable", detail: "Box stopped answering." });
+  });
+});
+
+describe("threadHandoffNotice", () => {
+  const base = {
+    handoffId: "h",
+    environmentId: EnvironmentId.make("environment-box"),
+    label: "Box",
+  };
+  it("tells the user a waiting move can still be cancelled", () => {
+    expect(threadHandoffNotice({ ...base, state: "pending" })?.detail).toBe(
+      "Send a message to keep it here instead.",
+    );
+  });
+  it("marks the copy left behind as read-only, and a failure with its reason", () => {
+    expect(
+      threadHandoffNotice({ ...base, state: "departed", threadId: "thread:x" as never }),
+    ).toMatchObject({ title: "This thread continues on Box", detail: "This copy is read-only." });
+    expect(
+      threadHandoffNotice({ ...base, state: "failed", lastError: "Push the branch." }),
+    ).toEqual({
+      tone: "error",
+      title: "Could not move to Box",
+      detail: "Push the branch.",
+    });
+    expect(threadHandoffNotice(null)).toBeNull();
   });
 });
