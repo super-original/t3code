@@ -59,6 +59,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as PeerForwarding from "./peer/PeerForwarding.ts";
 import * as RemoteDelegation from "./peer/RemoteDelegation.ts";
+import * as ThreadHandoff from "./peer/handoff/ThreadHandoff.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 import * as PeerMcpClient from "./peer/PeerMcpClient.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
@@ -690,9 +691,15 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.effectDiscard(
     RemoteDelegation.RemoteDelegation.pipe(Effect.flatMap((remote) => remote.start())),
   ),
+  // Runs moves that waited for a turn to end, and settles any a restart cut short.
+  Layer.effectDiscard(
+    ThreadHandoff.ThreadHandoff.pipe(Effect.flatMap((handoff) => handoff.start_())),
+  ),
 ).pipe(
   // delegate_task to a linked environment, from /mcp and the follower above.
   Layer.provide(RemoteDelegation.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
+  // Moving a thread to a linked environment, from Settings, menus and agents.
+  Layer.provide(ThreadHandoff.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(layerPullRequestService),

@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import { type EnvironmentId, OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import type { Tool } from "effect/ai";
 
@@ -6,6 +6,7 @@ import { OrchestratorToolkit } from "./tools.ts";
 
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../../../peer/RemoteDelegation.ts";
+import * as ThreadHandoff from "../../../peer/handoff/ThreadHandoff.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
@@ -190,6 +191,44 @@ const handlers = {
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
       return yield* service.waitForThread(scope, input);
     }),
+  ),
+  t3_thread_handoff: McpToolAccess.writesThreads(
+    (input) => [input.threadId],
+    (input) =>
+      Effect.gen(function* () {
+        const scope = yield* McpInvocationContext.McpInvocationContext;
+        const own = input.threadId === undefined || input.threadId === scope.thread?.threadId;
+        const threadId = input.threadId ?? scope.thread?.threadId;
+        if (threadId === undefined) {
+          return yield* new OrchestratorMcpFailure({
+            code: "target_required",
+            message: "Pass threadId: this MCP client is not running inside a T3 thread.",
+          });
+        }
+        const handoff = yield* ThreadHandoff.ThreadHandoff;
+        const state = yield* handoff.start({
+          threadId,
+          environmentId: input.environmentId,
+          projectId: input.projectId,
+          continuationPrompt: input.continuationPrompt,
+          // The calling thread is mid-turn: it moves once this turn ends.
+          whenTurnEnds: own,
+        });
+        return {
+          state: state.state,
+          environmentId: state.environmentId,
+          label: state.label,
+          threadId: state.state === "departed" ? state.threadId : null,
+          message:
+            state.state === "pending"
+              ? `This thread moves to ${state.label} when this turn ends. End the turn now; a message to this thread before then cancels the move.`
+              : state.state === "departed"
+                ? `The thread moved to ${state.label}.`
+                : state.state === "failed"
+                  ? `The move failed: ${state.lastError}`
+                  : `The thread is moving to ${state.label}.`,
+        };
+      }),
   ),
   t3_environment_links: McpToolAccess.reads(() =>
     Effect.gen(function* () {
