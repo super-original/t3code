@@ -220,6 +220,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       a linked environment's calls keep its agent's limits. Another environment
       links to this one only when it is set. */
   mcpModeLimitHeader: Schema.optionalKey(Schema.Boolean),
+  /** Accepts `t3_thread_import`, for threads moved here from a linked environment. */
+  threadImport: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 
