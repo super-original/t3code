@@ -5,6 +5,7 @@ import type { Tool } from "effect/ai";
 import { OrchestratorToolkit } from "./tools.ts";
 
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
+import * as RemoteDelegation from "../../../peer/RemoteDelegation.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
@@ -45,7 +46,22 @@ const handlers = {
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-      return yield* service.delegateTask(scope, input);
+      const target = input.target;
+      const environmentId =
+        target === undefined ? undefined : PeerForwarding.remoteTarget(scope, target.environmentId);
+      if (target === undefined || environmentId === undefined) {
+        return yield* service.delegateTask(scope, input);
+      }
+      // The task's child runs as an ordinary thread there; this thread keeps the task.
+      const threadScope = yield* McpInvocationContext.requireThreadScope(scope, "delegate_task");
+      const remote = yield* RemoteDelegation.RemoteDelegation;
+      const { taskId } = yield* remote.delegate(threadScope, {
+        ...input,
+        target: { ...target, environmentId },
+      });
+      return yield* input.mode === "wait"
+        ? service.awaitTask(threadScope, taskId, input.timeoutMs)
+        : service.taskStatus(scope, taskId);
     }),
   ),
   task_status: McpToolAccess.actsAsCaller(({ taskId }) =>
@@ -59,6 +75,12 @@ const handlers = {
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+      const remoteTask = yield* service.remoteTask(scope, input.taskId);
+      if (remoteTask !== undefined) {
+        const threadScope = yield* McpInvocationContext.requireThreadScope(scope, "task_cancel");
+        const remote = yield* RemoteDelegation.RemoteDelegation;
+        return yield* remote.cancel(threadScope, remoteTask, input.reason);
+      }
       return yield* service.cancelTask(scope, input);
     }),
   ),

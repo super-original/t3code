@@ -244,6 +244,12 @@ terminal, use `t3 environment link <address> --pairing-code <code> --access <mod
   removes it here.
 - Links last 30 days. Link again with a new pairing code to renew one.
 
+An agent can also hand a task to a linked machine with `delegate_task`: it runs
+there as an ordinary thread, in the project with the same repository, and this
+thread wakes with its result when it ends, as for any delegated task. It keeps
+following the task across restarts. If the other machine revokes the link, the
+task fails with that reason.
+
 ## Manage or revoke access
 
 On the host, **Settings → Connections** lets authorized administrators create

@@ -9,6 +9,7 @@ import {
   type ModelSelection,
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
+  type OrchestrationV2DelegatedFrom,
   type OrchestrationV2LinkOrigin,
   type OrchestrationV2ProviderThreadNativeMetadata,
   type OrchestrationV2ThreadProjection,
@@ -97,6 +98,8 @@ export interface ThreadLaunchInput {
   readonly creationSource: OrchestrationV2CreationSource;
   /** The linked environment this launch is for, if one asked for it. */
   readonly linkOrigin?: OrchestrationV2LinkOrigin;
+  /** The parent there, when that environment's agent delegated this as a task. */
+  readonly delegatedFrom?: OrchestrationV2DelegatedFrom;
 }
 
 /** What workspace preparation reads from a launch; a retry rebuilds it from the run. */
@@ -790,6 +793,9 @@ const make = Effect.gen(function* () {
                   ? {}
                   : { importedNativeThread: input.importedNativeThread }),
                 ...(input.linkOrigin === undefined ? {} : { linkOrigin: input.linkOrigin }),
+                ...(input.delegatedFrom === undefined
+                  ? {}
+                  : { delegatedFrom: input.delegatedFrom }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
               });

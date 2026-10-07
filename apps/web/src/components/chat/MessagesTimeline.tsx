@@ -466,9 +466,12 @@ interface MessagesTimelineProps {
   displayThreadKey?: string;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
+  /** The thread this one is a subagent of; `open` is absent when it cannot be opened from here. */
   parentThreadLink?: {
-    readonly threadId: ThreadId;
     readonly title: string;
+    /** Where it runs, when that is another environment. */
+    readonly environmentLabel?: string;
+    readonly open?: () => void;
   } | null;
   onForkFromRun: (input: {
     readonly sourceThreadId: ThreadId;
@@ -1319,10 +1322,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           <div className="chat-content-lane pt-1 sm:pt-2">
             <TimelineSystemDivider
               label="Subagent of"
-              detail={parentThreadLink.title}
+              detail={
+                parentThreadLink.environmentLabel === undefined
+                  ? parentThreadLink.title
+                  : `${parentThreadLink.title} on ${parentThreadLink.environmentLabel}`
+              }
               icon={BotIcon}
-              actionLabel="Open parent thread"
-              onAction={() => onOpenThread(parentThreadLink.threadId)}
+              {...(parentThreadLink.open === undefined
+                ? {}
+                : { actionLabel: "Open parent thread", onAction: parentThreadLink.open })}
             />
           </div>
         </div>
@@ -1334,7 +1342,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         {parentThreadLink !== null ? leadingContent : null}
       </>
     );
-  }, [historyControls, onOpenThread, parentThreadLink, topFadeEnabled]);
+  }, [historyControls, parentThreadLink, topFadeEnabled]);
 
   const canvas = useChatCanvas();
   const registerTimeline = canvas?.registerTimeline;

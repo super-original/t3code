@@ -504,7 +504,12 @@ function ThreadRouteContent(
   const headerSubtitle = [
     selectedThreadProject?.title ?? null,
     selectedEnvironmentConnection?.environmentLabel ?? null,
-    selectedThread?.linkOrigin ? `From ${selectedThread.linkOrigin.label}` : null,
+    // A linked environment's delegated task names its parent; other linked work its origin.
+    selectedThread?.delegatedFrom
+      ? `Subagent of ${selectedThread.delegatedFrom.title}`
+      : selectedThread?.linkOrigin
+        ? `From ${selectedThread.linkOrigin.label}`
+        : null,
   ]
     .filter(Boolean)
     .join(" · ");

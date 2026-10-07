@@ -15,6 +15,7 @@ import {
   EventId,
   IsoDateTime,
   MessageId,
+  EnvironmentId,
   NodeId,
   ForwardCompatibleUnion,
   ForwardCompatibleUnionArray,
@@ -104,6 +105,17 @@ export const OrchestrationV2LinkOrigin = Schema.Struct({
   label: Schema.String,
 });
 export type OrchestrationV2LinkOrigin = typeof OrchestrationV2LinkOrigin.Type;
+
+/**
+ * The thread in a linked environment that delegated this one, when it did:
+ * this thread is that parent's subagent, run here instead of there.
+ */
+export const OrchestrationV2DelegatedFrom = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  title: Schema.String,
+});
+export type OrchestrationV2DelegatedFrom = typeof OrchestrationV2DelegatedFrom.Type;
 
 export const OrchestrationV2NativeRefStrength = Schema.Literals(["strong", "weak", "none"]);
 export type OrchestrationV2NativeRefStrength = typeof OrchestrationV2NativeRefStrength.Type;
@@ -393,6 +405,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
   linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
+  delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -673,6 +686,18 @@ export const OrchestrationV2ExecutionNode = Schema.Struct({
 });
 export type OrchestrationV2ExecutionNode = typeof OrchestrationV2ExecutionNode.Type;
 
+/**
+ * Where an app-owned task runs when it runs in a linked environment instead
+ * of in a child thread here: that environment and the ordinary thread it runs
+ * as there. Such a task has no `childThreadId`.
+ */
+export const OrchestrationV2RemoteTaskChild = Schema.Struct({
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  label: Schema.String,
+});
+export type OrchestrationV2RemoteTaskChild = typeof OrchestrationV2RemoteTaskChild.Type;
+
 export const OrchestrationV2Subagent = Schema.Struct({
   id: NodeId,
   threadId: ThreadId,
@@ -684,6 +709,7 @@ export const OrchestrationV2Subagent = Schema.Struct({
   providerInstanceId: ProviderInstanceId,
   providerThreadId: Schema.NullOr(ProviderThreadId),
   childThreadId: Schema.NullOr(ThreadId),
+  remoteChild: Schema.optional(OrchestrationV2RemoteTaskChild),
   nativeTaskRef: Schema.NullOr(OrchestrationV2ProviderRef),
   prompt: Schema.String,
   title: Schema.NullOr(Schema.String),
@@ -1570,6 +1596,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     driver: ProviderDriverKind,
     providerInstanceId: ProviderInstanceId,
     childThreadId: Schema.NullOr(ThreadId),
+    remoteChild: Schema.optional(OrchestrationV2RemoteTaskChild),
     prompt: Schema.String,
     progress: Schema.optional(Schema.String),
     result: Schema.NullOr(Schema.String),
@@ -1864,6 +1891,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
   linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
+  delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
   latestRunId: Schema.NullOr(RunId),
   latestRunRequestedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   latestRunStartedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -2346,6 +2374,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     driver: ProviderDriverKind,
     providerInstanceId: ProviderInstanceId,
     childThreadId: Schema.NullOr(ThreadId),
+    remoteChild: Schema.optional(OrchestrationV2RemoteTaskChild),
     prompt: Schema.String,
     progress: Schema.optional(Schema.String),
     result: Schema.NullOr(Schema.String),
@@ -2634,6 +2663,8 @@ export const OrchestrationV2Command = Schema.Union([
     worktreePath: Schema.NullOr(TrimmedNonEmptyString),
     /** Only the server sets this; a client's thread.create never carries one. */
     linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
+    /** Only the server sets this, with `linkOrigin`, for a linked environment's delegated task. */
+    delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
     importedNativeThread: Schema.optional(
       Schema.Struct({
         ref: Schema.Struct({
@@ -3093,6 +3124,38 @@ const OrchestrationV2InternalCommand = Schema.Union([
         notification: OrchestrationV2Notification,
       }),
     ),
+  }),
+  /**
+   * Records a delegated task that runs in a linked environment: the task, its
+   * node and its turn item on the parent, as `delegated_task.request` does,
+   * without a child thread here. `remoteChild` is the thread already launched
+   * there. The ids derive from `commandId`, so a retry records nothing new.
+   */
+  Schema.Struct({
+    type: Schema.Literal("delegated_task.remote.request"),
+    commandId: CommandId,
+    parentThreadId: ThreadId,
+    parentRunId: RunId,
+    parentNodeId: NodeId,
+    task: TrimmedNonEmptyString,
+    title: Schema.optional(TrimmedNonEmptyString),
+    driver: ProviderDriverKind,
+    modelSelection: ModelSelection,
+    remoteChild: OrchestrationV2RemoteTaskChild,
+    completionWake: Schema.optional(Schema.Literals(["always", "settled_only"])),
+  }),
+  /**
+   * Completes a delegated task that ran in a linked environment, with what its
+   * thread there ended as. The parent wakes exactly as for a child here. A
+   * task that already has a result is left as it is.
+   */
+  Schema.Struct({
+    type: Schema.Literal("delegated_task.remote.complete"),
+    commandId: CommandId,
+    parentThreadId: ThreadId,
+    taskId: NodeId,
+    status: Schema.Literals(["completed", "failed", "cancelled", "interrupted"]),
+    result: Schema.String,
   }),
   /** Records that the provider rollback `requestId` failed for good. */
   Schema.Struct({
